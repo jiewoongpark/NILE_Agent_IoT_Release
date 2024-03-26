@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text;
 using IOT.Properties;
 
 namespace IOT
@@ -121,7 +122,7 @@ namespace IOT
         private Dictionary<string, clsMQTTBrokerProtocol> mqttConnections = new Dictionary<string, clsMQTTBrokerProtocol>();
         private ClsCoApProtocol coapProtocol;
 
-        
+        public int messageCounter = 0;
         
         
         
@@ -373,26 +374,12 @@ namespace IOT
             {
                 switch (config.RtdbType.ToLower())
                 {
-
+                    case "mqtt":
+                        await mqttLogPrinting(config);
+                        break;
                     case "redis":
                         var redisConfig = JsonConvert.DeserializeObject<Redis>(config.RtdbConnectionInfo.ToString());
-
-                        bool isClusterMode = redisConfig.ClusterMode;
-                        bool isSingleNodeInsert = redisConfig.SingleNodeInsert;
-
-                        if (isClusterMode && isSingleNodeInsert)
-                        {
-                            await ProcessRedisClusterSingleInsertConfiguration(config, redisConfig);
-                        }
-                        else if (isClusterMode && !isSingleNodeInsert)
-                        {
-                            await ProcessRedisClusterMultipleInsertConfiguration(config, redisConfig);
-                        }
-                        else
-                        {
-                            await ProcessRedisConfiguration(config, redisConfig);
-
-                        }
+                        await ProcessRedisConfiguration(config, redisConfig);
                         break;
                     case "influxdb":
                         var influxConfig = JsonConvert.DeserializeObject<InfluxDB>(config.RtdbConnectionInfo.ToString());
@@ -406,179 +393,41 @@ namespace IOT
             }
         }
 
-        private async Task ProcessRedisClusterSingleInsertConfiguration(RtdbConfiguration config, Redis redisConfig)
+        private async Task mqttLogPrinting(RtdbConfiguration config)
         {
-            if (!string.IsNullOrEmpty(config.MqttUrl) && string.IsNullOrEmpty(config.CoapIp))
+            if (string.IsNullOrEmpty(config.RtdbConnectionInfo))
             {
-                if (config.RtdbType.ToLower().Equals("redis"))
+                var mqttProtocol = new clsMQTTBrokerProtocol(
+                    config.MqttUrl,
+                    config.MqttPort ?? defaultMqttPort,
+                    config.MqttClientId,
+                    config.MqttUsername,
+                    config.MqttPassword,
+                    config.MqttCleanSession ?? defaultCleanSession,
+                    config.MqttTimeout ?? defaultTimeout);
+                await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
+                
+                messageCounter = 0; // Counter to track the number of messages received
+
+                mqttProtocol.MessageReceived += (topic, message) =>
                 {
-                    var mqttProtocol = new clsMQTTBrokerProtocol(
-                        config.MqttUrl,
-                        config.MqttPort ?? defaultMqttPort,
-                        config.MqttClientId,
-                        config.MqttUsername,
-                        config.MqttPassword,
-                        config.MqttCleanSession ?? defaultCleanSession,
-                        config.MqttTimeout ?? defaultTimeout);
-                    await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
+                    messageCounter++;
 
-                    mqttProtocol.MessageReceived += async (topic, message) =>
+                    // Check if it's the first message or every 1000th message
+                    if (messageCounter == 1 || messageCounter % 100000 == 0)
                     {
-                        OperationResult initResult = new OperationResult(true, "Redis client initialized.");
-                        if (!ClsRtdbRedisProtocol.RedisIsInitialized)
-                        { 
-                            initResult = ClsRtdbRedisProtocol.Initialize(redisConfig.ConnectionString, redisConfig.Database);
-                        }
-                        
-                        var redisProtocol = new ClsRtdbRedisProtocol();
-                        var appendResult = await redisProtocol.AppendDataToListAsync(topic, message);
-                        
-                    };
-                    
-                    logAppendedForRedis = true;
-                    logAppendedForMqtt = true;
+                        // call appendLog function for the first data and every 1000th data afterwards (to calculate the time and efficiency)
+                        appendLog($"Message #{messageCounter}: {message}");
 
-                }
+                    }
+                };
+                logAppendedForMqtt = true;
             }
-            else if (string.IsNullOrEmpty(config.MqttUrl) && !string.IsNullOrEmpty(config.CoapIp))
-            {
-                if (config.RtdbType.ToLower().Equals("redis"))
-                {
-                    string coapUrl = $"coap://{config.CoapIp}:{config.CoapPort}/{config.CoapTopic}";
-
-                    SetupCoAP(coapUrl, config.CoapTopic);
-
-                    int intervalInSeconds = Convert.ToInt32(CoapTimer.Value);
-                    _coapTimer?.Dispose();
-                    _coapTimer = new Timer
-                    {
-                        Interval = intervalInSeconds * 1000
-                    };
-                    
-                    coapProtocol.MessageReceived += (topic, message) =>
-                    {
-                        _coapTimer.Tick += async (sender, e) =>
-                        {
-                            OperationResult initResult = new OperationResult(true, "Redis client initialized.");
-                            if (!ClsRtdbRedisProtocol.RedisIsInitialized)
-                            { 
-                                initResult = ClsRtdbRedisProtocol.Initialize(redisConfig.ConnectionString, redisConfig.Database);
-                            }
-                       
-                            if (!initResult.RedisSuccess)
-                            {
-                                appendLog(initResult.RedisMessage);
-                            }
-                            else
-                            {
-                                var redisProtocol = new ClsRtdbRedisProtocol();
-                                var appendResult = await redisProtocol.AppendDataToListAsync(topic, message);
-                                appendLog(!appendResult.RedisSuccess
-                                    ? appendResult.RedisMessage
-                                    : "[CoAP] messages sent to [REDIS]");
-                            }
-                          
-                        };
-                    };
-                    logAppendedForRedis = true;
-                    logAppendedForCoap = true;
-                    _coapTimer.Start();
-                }
-            }
-            else
-            {
-                appendLog("MQTT/CoAP Message is Empty. Please check your configuration.");
-            }
-
         }
-        private async Task ProcessRedisClusterMultipleInsertConfiguration(RtdbConfiguration config, Redis redisConfig)
-        {
-            if (!string.IsNullOrEmpty(config.MqttUrl) && string.IsNullOrEmpty(config.CoapIp))
-            {
-                if (config.RtdbType.ToLower().Equals("redis"))
-                {
-                    var mqttProtocol = new clsMQTTBrokerProtocol(
-                        config.MqttUrl,
-                        config.MqttPort ?? defaultMqttPort,
-                        config.MqttClientId,
-                        config.MqttUsername,
-                        config.MqttPassword,
-                        config.MqttCleanSession ?? defaultCleanSession,
-                        config.MqttTimeout ?? defaultTimeout);
-                    await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
-
-                    mqttProtocol.MessageReceived += async (topic, message) =>
-                    {
-                        OperationResult initResult = new OperationResult(true, "Redis client initialized.");
-                        if (!ClsRtdbRedisProtocol.RedisIsInitializedManyNodes)
-                        { 
-                            initResult = ClsRtdbRedisProtocol.InitializeManyNodes(redisConfig.ConnectionStringManyNodes, redisConfig.Database);
-                        }
-                        
-                        var redisProtocol = new ClsRtdbRedisProtocol();
-                        var appendResult = await redisProtocol.AppendDataToManyNodesListAsync(topic, message);
-                        
-                    };
-                    
-                    logAppendedForRedis = true;
-                    logAppendedForMqtt = true;
-
-                }
-            }
-            else if (string.IsNullOrEmpty(config.MqttUrl) && !string.IsNullOrEmpty(config.CoapIp))
-            {
-                if (config.RtdbType.ToLower().Equals("redis"))
-                {
-                    string coapUrl = $"coap://{config.CoapIp}:{config.CoapPort}/{config.CoapTopic}";
-
-                    SetupCoAP(coapUrl, config.CoapTopic);
-
-                    int intervalInSeconds = Convert.ToInt32(CoapTimer.Value);
-                    _coapTimer?.Dispose();
-                    _coapTimer = new Timer
-                    {
-                        Interval = intervalInSeconds * 1000
-                    };
-                    
-                    coapProtocol.MessageReceived += (topic, message) =>
-                    {
-                        _coapTimer.Tick += async (sender, e) =>
-                        {
-                            OperationResult initResult = new OperationResult(true, "Redis client initialized.");
-                            if (!ClsRtdbRedisProtocol.RedisIsInitializedManyNodes)
-                            { 
-                                initResult = ClsRtdbRedisProtocol.InitializeManyNodes(redisConfig.ConnectionStringManyNodes, redisConfig.Database);
-                            }
-                       
-                            if (!initResult.RedisSuccess)
-                            {
-                                appendLog(initResult.RedisMessage);
-                            }
-                            else
-                            {
-                                var redisProtocol = new ClsRtdbRedisProtocol();
-                                var appendResult = await redisProtocol.AppendDataToManyNodesListAsync(topic, message);
-                                appendLog(!appendResult.RedisSuccess
-                                    ? appendResult.RedisMessage
-                                    : "[CoAP] messages sent to [REDIS]");
-                            }
-                          
-                        };
-                    };
-                    logAppendedForRedis = true;
-                    logAppendedForCoap = true;
-                    _coapTimer.Start();
-                }
-            }
-            else
-            {
-                appendLog("MQTT/CoAP Message is Empty. Please check your configuration.");
-            }
-
-        }
+        
+        
         private async Task ProcessRedisConfiguration(RtdbConfiguration config, Redis redisConfig)
         {
-            
             if (!string.IsNullOrEmpty(config.MqttUrl) && string.IsNullOrEmpty(config.CoapIp))
             {
                 if (config.RtdbType.ToLower().Equals("redis"))
@@ -592,10 +441,11 @@ namespace IOT
                         config.MqttCleanSession ?? defaultCleanSession,
                         config.MqttTimeout ?? defaultTimeout);
                     await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
-
+                    
+                    
                     mqttProtocol.MessageReceived += async (topic, message) =>
                     {
-                        var redisProtocol = new ClsRtdbRedisStandaloneProtocol(redisConfig.ConnectionString, redisConfig.Database);
+                        var redisProtocol = new ClsRtdbRedisStandaloneProtocol(redisConfig.connectionString, redisConfig.database);
                         await redisProtocol.AppendDataToListAsync(topic, message);
                     };
                     
@@ -623,7 +473,7 @@ namespace IOT
                     {
                         _coapTimer.Tick += async (sender, e) =>
                         {
-                            var redisProtocol = new ClsRtdbRedisStandaloneProtocol(redisConfig.ConnectionString, redisConfig.Database);
+                            var redisProtocol = new ClsRtdbRedisStandaloneProtocol(redisConfig.connectionString, redisConfig.database);
                             await redisProtocol.AppendDataToListAsync(topic, message);
                             appendLog($"[CoAP] messages sent to [Redis]");
                         };
@@ -639,7 +489,6 @@ namespace IOT
             }
 
         }
-
         
         private async Task ProcessInfluxDBConfiguration(RtdbConfiguration config, InfluxDB influxConfig)
         {
@@ -811,7 +660,7 @@ namespace IOT
                                     {
                                         Directory.CreateDirectory(IOT_LogPath);
                                     }
-                                    File.AppendAllText(IOT_LogPath + IOT_LogFileName, txtLog.Text);
+                                    //File.AppendAllText(IOT_LogPath + IOT_LogFileName, txtLog.Text);
                                 }
                                 catch (Exception exp)
                                 {
@@ -820,17 +669,72 @@ namespace IOT
                             }
 
                             this.txtLog.Clear();
-                            if (exp_st != null)
+                            /*if (exp_st != null)
                             {
                                 this.txtLog.AppendText("\r\n" + exp_st + "\r\n");
                                 log_line_cnt++;
-                            }
+                            }*/
                         }
                     }
                 }
             }
         }
         
+        private StringBuilder logBuffer = new StringBuilder();
+        private object logLock = new object();
+
+        // Call this method to append log entries
+        private void ChangedAppendLog(string strContent, bool newline = true, bool incTime = true)
+        {
+            DateTime localDate = DateTime.Now;
+            string logEntry = "";
+
+            if (incTime)
+            {
+                logEntry = $"[{localDate:yyyy-MM-ddTHH:mm:ss.fff}] {strContent}";
+            }
+            else
+            {
+                logEntry = strContent;
+            }
+
+            if (newline)
+            {
+                logEntry += "\r\n";
+            }
+
+            lock (logLock)
+            {
+                logBuffer.Append(logEntry);
+
+                // Condition to flush the buffer could be based on size, time, etc.
+                if (++log_line_cnt > MAX_LOG_LINES)
+                {
+                    FlushLogBuffer();
+                }
+            }
+        }
+
+        // Flushes the log buffer to the UI
+        private void FlushLogBuffer()
+        {
+            // Check if the UI thread is required to update the UI
+            if (txtLog.InvokeRequired)
+            {
+                // Invoking the UI thread to update the TextBox
+                txtLog.Invoke(new Action(FlushLogBuffer));
+            }
+            else
+            {
+                // Appending the accumulated log entries to the TextBox
+                txtLog.AppendText(logBuffer.ToString());
+                // Clearing the buffer after appending to the TextBox
+                logBuffer.Clear();
+                // Resetting the line counter
+                log_line_cnt = 0;
+            }
+        }
+
         
         private void frmAgentMain_FormClosing(object sender, FormClosingEventArgs e)
         {
@@ -950,11 +854,8 @@ namespace IOT
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class Redis
     {
-        public bool ClusterMode { get; set; }
-        public bool SingleNodeInsert { get; set; }
-        public string ConnectionString { get; set; }
-        public string[] ConnectionStringManyNodes { get; set; }
-        public int Database { get; set; }
+        public string connectionString { get; set; }
+        public int database { get; set; }
     }
 
     

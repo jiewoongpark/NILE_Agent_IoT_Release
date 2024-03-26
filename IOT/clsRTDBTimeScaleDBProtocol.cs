@@ -30,6 +30,33 @@ namespace IOT
                 }
             }
         }
+        
+        /*public async Task WriteDataBatchAsync(IEnumerable<(string topic, string message)> data, string tableName)
+        {
+            var query = $"INSERT INTO {tableName} (topic, message, timestamp) VALUES (@topic, @message, @timestamp)";
+            
+            using (var conn = new NpgsqlConnection(_connectionString))
+            {
+                await conn.OpenAsync();
+                using (var trans = conn.BeginTransaction())
+                using (var cmd = new NpgsqlCommand(query, conn))
+                {
+                    cmd.Parameters.Add(new NpgsqlParameter("@topic", NpgsqlTypes.NpgsqlDbType.Text));
+                    cmd.Parameters.Add(new NpgsqlParameter("@message", NpgsqlTypes.NpgsqlDbType.Text));
+                    cmd.Parameters.Add(new NpgsqlParameter("@timestamp", NpgsqlTypes.NpgsqlDbType.Timestamp));
+
+                    foreach (var (topic, message) in data)
+                    {
+                        cmd.Parameters["@topic"].Value = topic;
+                        cmd.Parameters["@message"].Value = message;
+                        cmd.Parameters["@timestamp"].Value = DateTime.UtcNow;
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+
+                    await trans.CommitAsync();
+                }
+            }
+        }*/
     }
     
 }
