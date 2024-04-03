@@ -1,75 +1,98 @@
-﻿using FreeRedis;
-using System;
+﻿using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using StackExchange.Redis;
 using System.Threading.Tasks;
+#pragma warning disable CS0184 // 'is' expression's given expression is never of the provided type
+#pragma warning disable CS0183 // 'is' expression's given expression is always of the provided type
+
 
 namespace IOT
 {
-    [SuppressMessage("ReSharper", "FieldCanBeMadeReadOnly.Local")]
-    [SuppressMessage("ReSharper", "RedundantDefaultMemberInitializer")]
-    [SuppressMessage("ReSharper", "EmptyConstructor")]
+    [SuppressMessage("ReSharper", "InvertIf")]
+    [SuppressMessage("ReSharper", "SuggestVarOrType_BuiltInTypes")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "ConditionIsAlwaysTrueOrFalse")]
     public class ClsRtdbRedisProtocol
     {
-        private static RedisClient _redisClient;
-        private static bool _isInitialized = false;
-        private string _keyPrefix = "";
+        
+        private static IDatabase _database;
+        private static ConnectionMultiplexer _connectionMultiplexer;
+        private static int targetDatabase;
 
-        public ClsRtdbRedisProtocol() { }
+        // public long connectedAt { get; private set; }
+        public bool connectionStatus { get; private set; }
 
-        public static OperationResult Initialize(string nodeEndpoints)
+        
+        
+        public ClsRtdbRedisProtocol(string connectionString, int database, bool clustered, string finalizedTopic)
         {
-            try
-            {
-                if (_redisClient == null)
-                {
-                    var connectionString = string.Join(",", nodeEndpoints);
-                    _redisClient = new RedisClient(connectionString);
+            targetDatabase = database;
 
-                    _isInitialized = true;
-                }
-                return new OperationResult(true, "Connection Established Successfully to REDIS Cluster");
-            }
-            catch (Exception ex)
+            if (clustered)
             {
-                return new OperationResult(false, $"Exception while attempting to connect to REDIS Cluster: {ex.Message}");
+                if (_connectionMultiplexer == null || !_connectionMultiplexer.IsConnected)
+                {
+                    connectionStatus = false;
+                    
+                    string[] connectionStrings = connectionString.Split(';');
+                    
+                    foreach (string connStr in connectionStrings)
+                    {
+                   
+                        var multiplexer = ConnectionMultiplexer.Connect(connStr);
+                        var listLength = multiplexer.GetDatabase(targetDatabase).ListLength(finalizedTopic);
+                        
+                        if (listLength is long || listLength is int)
+                        {
+                            _connectionMultiplexer = multiplexer;
+                            connectionStatus = true;
+                            break;
+                        }
+                    
+                    }
+                }
+                else
+                {
+                    connectionStatus = false;
+                }
             }
+            else
+            {
+                connectionStatus = false;
+                _connectionMultiplexer = ConnectionMultiplexer.Connect(connectionString);
+                connectionStatus = true;
+            }
+            
         }
 
-        public static bool RedisIsInitialized => _isInitialized;
-
-        public async Task<OperationResult> AppendDataToListAsync(string key, string value)
+        
+        public async Task AppendDataToListAsync(string key, string value, bool MessageTime)
         {
-            try
+            
+            _database = _connectionMultiplexer.GetDatabase(targetDatabase);
+
+            string messageValue;
+            
+            if (MessageTime)
             {
                 var utcNow = DateTime.UtcNow;
                 var koreanTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time");
                 var koreanTime = TimeZoneInfo.ConvertTimeFromUtc(utcNow, koreanTimeZone);
                 var timestamp = koreanTime.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
 
-                var valueWithTimestamp = $"[{timestamp}] {value}";
-
-                await _redisClient.RPushAsync(_keyPrefix + key, valueWithTimestamp);
-
-                return new OperationResult(true, "Data inserted successfully to REDIS.");
+                messageValue = $"[{timestamp}] {value}";
             }
-            catch (Exception ex)
+            else
             {
-                return new OperationResult(false, $"Error inserting data into REDIS: {ex.Message}");
+                messageValue = $"{value}";
             }
-        }
-    }
+            
+            await _database.ListRightPushAsync(key, messageValue);
 
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    public class OperationResult
-    {
-        public bool RedisSuccess { get; set; }
-        public string RedisMessage { get; set; }
-
-        public OperationResult(bool success, string message)
-        {
-            RedisSuccess = success;
-            RedisMessage = message;
         }
+        
     }
+    
+    
 }

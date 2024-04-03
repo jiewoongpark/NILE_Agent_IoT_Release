@@ -37,8 +37,8 @@ namespace IOT
     [SuppressMessage("ReSharper", "ConvertIfStatementToSwitchStatement")]
     [SuppressMessage("ReSharper", "RedundantBoolCompare")]
     [SuppressMessage("ReSharper", "ConditionIsAlwaysTrueOrFalse")]
-    
-    
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "ConvertIfStatementToConditionalTernaryExpression")]
     public partial class frmIOTMain : Form
     {
         
@@ -245,6 +245,8 @@ namespace IOT
             txtLogPath.Text = LogSaveCheckBox.Checked ? Properties.Settings.Default.LOG_PATH : "";
             filePathSaveCheckBox.Checked = Properties.Settings.Default.SAVE_FILE_PATH;
             LogSaveCheckBox.Checked = Properties.Settings.Default.SAVE_LOG_PATH;
+            ShowLog.Checked = true;
+            MessageTime.Checked = true;
         }
 
         private void frmAgentMain_Load(object sender, EventArgs e)
@@ -313,8 +315,12 @@ namespace IOT
             {
                 UpdateConnectionStatusUI(ConnectionStatus.Ready);
                 string configFileContent = File.ReadAllText(txtFilePath.Text);
-                appendLog(configFileContent);
-                var configurations = JsonConvert.DeserializeObject<List<RtdbConfiguration>>(configFileContent);
+                
+                if (ShowLog.Checked)
+                {
+                    appendLog(configFileContent);
+                }
+                var configurations = JsonConvert.DeserializeObject<List<IotConfiguration>>(configFileContent);
                 if (configurations == null || configurations.Count == 0)
                 {
                     MessageBox.Show(Resources.InvalidConfigFileOrEmpty, Resources.ErrorText, MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -322,29 +328,33 @@ namespace IOT
                 }
 
                 await ProcessConfigurations(configurations);
-                if (logAppendedForMqtt)
-                {
-                    appendLog("MQTT Connected Successfully");
-                }
                 
-                if (logAppendedForCoap)
+                if (ShowLog.Checked)
                 {
-                    appendLog("CoAP Connected Successfully");
-                }
+                    if (logAppendedForMqtt)
+                    {
+                        appendLog("MQTT Connected Successfully");
+                    }
                 
-                if (logAppendedForRedis)
-                {
-                    appendLog("Redis Connected Successfully");
-                }
+                    if (logAppendedForCoap)
+                    {
+                        appendLog("CoAP Connected Successfully");
+                    }
                 
-                if (logAppendedForInflux)
-                {
-                    appendLog("Influx Connected Successfully");
-                }
+                    if (logAppendedForRedis)
+                    {
+                        appendLog("Redis Connected Successfully");
+                    }
                 
-                if (logAppendedForTimeScale)
-                {
-                    appendLog("TimeScale Connected Successfully");
+                    if (logAppendedForInflux)
+                    {
+                        appendLog("Influx Connected Successfully");
+                    }
+                
+                    if (logAppendedForTimeScale)
+                    {
+                        appendLog("TimeScale DB Connected Successfully");
+                    }
                 }
                 
                 btnSubscribe.Text = Resources.UnsubscribeText;
@@ -365,7 +375,7 @@ namespace IOT
         
         
         
-        private async Task ProcessConfigurations(List<RtdbConfiguration> configurations)
+        private async Task ProcessConfigurations(List<IotConfiguration> configurations)
         {
             appendLog("Job Received. Processing ...");
             logAppendedForMqtt = logAppendedForRedis = logAppendedForInflux = logAppendedForTimeScale = logAppendedForCoap = false;
@@ -393,7 +403,7 @@ namespace IOT
             }
         }
 
-        private async Task mqttLogPrinting(RtdbConfiguration config)
+        private async Task mqttLogPrinting(IotConfiguration config)
         {
             if (string.IsNullOrEmpty(config.RtdbConnectionInfo))
             {
@@ -407,26 +417,32 @@ namespace IOT
                     config.MqttTimeout ?? defaultTimeout);
                 await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
                 
-                messageCounter = 0; // Counter to track the number of messages received
+                messageCounter = 0; // Counter for tracking the number of messages received
 
                 mqttProtocol.MessageReceived += (topic, message) =>
                 {
-                    messageCounter++;
-
-                    // Check if it's the first message or every 1000th message
-                    if (messageCounter == 1 || messageCounter % 100000 == 0)
+                    try
                     {
-                        // call appendLog function for the first data and every 1000th data afterwards (to calculate the time and efficiency)
-                        appendLog($"Message #{messageCounter}: {message}");
+                        messageCounter++;
 
+                        // Check if it's the first message or 1000th message
+                        if (messageCounter == 1 || messageCounter % 100000 == 0)
+                        {
+                            appendLog($"Message #{messageCounter}: {message}");
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        appendLog(ex.Message);
+                    }
+       
                 };
                 logAppendedForMqtt = true;
             }
         }
         
         
-        private async Task ProcessRedisConfiguration(RtdbConfiguration config, Redis redisConfig)
+        private async Task ProcessRedisConfiguration(IotConfiguration config, Redis redisConfig)
         {
             if (!string.IsNullOrEmpty(config.MqttUrl) && string.IsNullOrEmpty(config.CoapIp))
             {
@@ -441,12 +457,37 @@ namespace IOT
                         config.MqttCleanSession ?? defaultCleanSession,
                         config.MqttTimeout ?? defaultTimeout);
                     await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
-                    
+
+                    string finalizedTopic = config.MqttTopic;
+                    var redisProtocol = new ClsRtdbRedisProtocol(redisConfig.connectionString, redisConfig.database, redisConfig.clustered, finalizedTopic);
                     
                     mqttProtocol.MessageReceived += async (topic, message) =>
                     {
-                        var redisProtocol = new ClsRtdbRedisStandaloneProtocol(redisConfig.connectionString, redisConfig.database);
-                        await redisProtocol.AppendDataToListAsync(topic, message);
+                        
+                        try
+                        {
+                            // for Testing Purpose
+                            // appendLog("List Length: " + redisProtocol.connectedAt.ToString());
+                            
+                            if (redisProtocol.connectionStatus)
+                            {
+                                await redisProtocol.AppendDataToListAsync(topic, message, MessageTime.Checked);
+                                
+                                if (ShowLog.Checked)
+                                { 
+                                    appendLog($"[MQTT-Redis] Topic: {topic}");
+                                }
+                            }
+                            else
+                            {
+                                appendLog($"[Redis] Connection Error");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            appendLog($"[Redis] Error processing message: {ex.Message}");
+                        } 
+                        
                     };
                     
                     logAppendedForRedis = true;
@@ -464,23 +505,43 @@ namespace IOT
 
                     int intervalInSeconds = Convert.ToInt32(CoapTimer.Value);
                     _coapTimer?.Dispose();
+                    
                     _coapTimer = new Timer
                     {
                         Interval = intervalInSeconds * 1000
                     };
+
+                    string finalizedTopic = config.CoapTopic;
+                    var redisProtocol = new ClsRtdbRedisProtocol(redisConfig.connectionString, redisConfig.database, redisConfig.clustered, finalizedTopic);
                     
                     coapProtocol.MessageReceived += (topic, message) =>
                     {
-                        _coapTimer.Tick += async (sender, e) =>
+                        try
                         {
-                            var redisProtocol = new ClsRtdbRedisStandaloneProtocol(redisConfig.connectionString, redisConfig.database);
-                            await redisProtocol.AppendDataToListAsync(topic, message);
-                            appendLog($"[CoAP] messages sent to [Redis]");
-                        };
+                            _coapTimer.Tick += async (sender, e) =>
+                            {
+                                if (redisProtocol.connectionStatus)
+                                {
+                                    await redisProtocol.AppendDataToListAsync(topic, message, MessageTime.Checked);
+                                    appendLog($"[CoAP] messages sent to [Redis]");
+                                }
+                                else
+                                {
+                                    appendLog($"[Redis] Connection Error");
+                                }
+                            };
+                        }
+                        catch (Exception ex)
+                        {
+                            appendLog($"[Redis] Error processing message: {ex.Message}");
+                        }
+                        
                     };
+                    
                     logAppendedForRedis = true;
                     logAppendedForCoap = true;
                     _coapTimer.Start();
+                    
                 }
             }
             else
@@ -490,7 +551,7 @@ namespace IOT
 
         }
         
-        private async Task ProcessInfluxDBConfiguration(RtdbConfiguration config, InfluxDB influxConfig)
+        private async Task ProcessInfluxDBConfiguration(IotConfiguration config, InfluxDB influxConfig)
         {
             if (!string.IsNullOrEmpty(config.MqttUrl) && string.IsNullOrEmpty(config.CoapIp))
             {
@@ -505,22 +566,44 @@ namespace IOT
                         config.MqttCleanSession ?? defaultCleanSession,
                         config.MqttTimeout ?? defaultTimeout);
                     await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
-
+                    
+                    var influxProtocol = new clsRTDBInfluxDBProtocol(
+                                            influxConfig.url,
+                                            influxConfig.token,
+                                            influxConfig.org,
+                                            influxConfig.bucket);
+                    
                     mqttProtocol.MessageReceived += async (topic, message) =>
                     {
-                        var influxProtocol = new clsRTDBInfluxDBProtocol(
-                            influxConfig.url,
-                            influxConfig.token,
-                            influxConfig.org,
-                            influxConfig.bucket);
+                        try
+                        {
+                            if (clsRTDBInfluxDBProtocol.influxConnectionStatus)
+                            {
+                                await influxProtocol.WriteData(influxConfig.measurement, topic, message, MessageTime.Checked);
+                            }
+                            else
+                            {
+                                appendLog($"[InfluxDB] Connection Error");
+                            }
                         
-                        await influxProtocol.WriteData(influxConfig.measurement, topic, message);
+                            
+                            if (ShowLog.Checked)
+                            {
+                                appendLog($"[MQTT-InfluxDB] Topic: {topic}");
+                            }
+                            
+                        }
+                        catch (Exception ex)
+                        {
+                            appendLog($"[InfluxDB] Error processing message: {ex.Message}");
+                        }
+                        
                     };
                     
                     logAppendedForInflux = true;
                     logAppendedForMqtt = true;
                 }
-            } 
+            }
             else if(string.IsNullOrEmpty(config.MqttUrl) && !string.IsNullOrEmpty(config.CoapIp))
             {
                 if (config.RtdbType.ToLower().Equals("influxdb"))
@@ -531,23 +614,43 @@ namespace IOT
                     
                     int intervalInSeconds = Convert.ToInt32(CoapTimer.Value);
                     _coapTimer?.Dispose();
+                    
                     _coapTimer = new Timer
                     {
                         Interval = intervalInSeconds * 1000
                     };
                     
+                    var influxProtocol = new clsRTDBInfluxDBProtocol(
+                                            influxConfig.url,
+                                            influxConfig.token,
+                                            influxConfig.org,
+                                            influxConfig.bucket);
+                    
                     coapProtocol.MessageReceived += (topic, message) =>
                     {
-                        _coapTimer.Tick += async (sender, e) =>
+                        try
                         {
-                            var influxProtocol = new clsRTDBInfluxDBProtocol(
-                                influxConfig.url,
-                                influxConfig.token,
-                                influxConfig.org,
-                                influxConfig.bucket);
-                            await influxProtocol.WriteData(influxConfig.measurement, topic, message);
-                            appendLog("[CoAP] messages sent to [InfluxDB]");
-                        };
+                            _coapTimer.Tick += async (sender, e) =>
+                            {
+                                
+                                if (clsRTDBInfluxDBProtocol.influxConnectionStatus)
+                                {
+                                    await influxProtocol.WriteData(influxConfig.measurement, topic, message, MessageTime.Checked);
+                                    appendLog("[CoAP] messages sent to [InfluxDB]");
+                                }
+                                else
+                                {
+                                    appendLog($"[InfluxDB] Connection Error");
+                                }
+                                
+                            };
+                        }
+                        catch (Exception ex)
+                        {
+                            appendLog($"[InfluxDB] Error processing message: {ex.Message}");
+                        }
+                        
+                      
                     };
                     logAppendedForInflux = true;
                     logAppendedForCoap = true;
@@ -561,7 +664,7 @@ namespace IOT
 
         }
 
-        private async Task ProcessTimeScaleDBConfiguration(RtdbConfiguration config, TimeScaleDB timescaleConfig)
+        private async Task ProcessTimeScaleDBConfiguration(IotConfiguration config, TimeScaleDB timescaleConfig)
         {
             if (!string.IsNullOrEmpty(config.MqttUrl) && string.IsNullOrEmpty(config.CoapIp))
             {
@@ -577,10 +680,25 @@ namespace IOT
                         config.MqttTimeout ?? defaultTimeout);
                     await mqttProtocol.ConnectAndSubscribeAsync(config.MqttTopic);
 
+                    var timescaleProtocol = new ClsRtdbTimeScaleDbProtocol(timescaleConfig.ConnectionString);
+                    
                     mqttProtocol.MessageReceived += async (topic, message) =>
                     {
-                        var timescaleProtocol = new ClsRtdbTimeScaleDbProtocol(timescaleConfig.ConnectionString);
-                        await timescaleProtocol.WriteDataAsync(timescaleConfig.table, topic, message);
+                        try
+                        {
+                            await timescaleProtocol.WriteDataAsync(timescaleConfig.table, topic, message, MessageTime.Checked);
+                            
+                            if (ShowLog.Checked)
+                            {
+                                appendLog($"[MQTT-TimeScaleDB] Topic: {topic}");
+                            }
+                            
+                        }
+                        catch (Exception ex)
+                        {
+                            appendLog($"[TimeScaleDB] Error processing message: {ex.Message}");
+                        }
+                        
                     };
                     
                     logAppendedForTimeScale = true;
@@ -596,22 +714,32 @@ namespace IOT
                     SetupCoAP(coapUrl, config.CoapTopic);
                     int intervalInSeconds = Convert.ToInt32(CoapTimer.Value);
                     _coapTimer?.Dispose();
+                    
                     _coapTimer = new Timer
                     {
                         Interval = intervalInSeconds * 1000
                     };
-
+                    
+                    var timescaleProtocol = new ClsRtdbTimeScaleDbProtocol(timescaleConfig.ConnectionString);
+                    
                     coapProtocol.MessageReceived += (topic, message) =>
                     {
-                        _coapTimer.Tick += async (sender, e) =>
+                        try
                         {
-                            var timescaleProtocol = new ClsRtdbTimeScaleDbProtocol(timescaleConfig.ConnectionString);
-                            await timescaleProtocol.WriteDataAsync(timescaleConfig.table, topic, message);
-                            appendLog("[CoAP] messages sent to [TimeScaleDB]");
-                        };
-                        logAppendedForTimeScale = true;
-                        logAppendedForCoap = true;
-                        _coapTimer.Start();
+                            _coapTimer.Tick += async (sender, e) =>
+                            { 
+                                await timescaleProtocol.WriteDataAsync(timescaleConfig.table, topic, message, MessageTime.Checked);
+                                appendLog("[CoAP] messages sent to [TimeScaleDB]");
+                            };
+                            logAppendedForTimeScale = true;
+                            logAppendedForCoap = true;
+                            _coapTimer.Start();
+                        }
+                        catch (Exception ex)
+                        {
+                            appendLog($"[TimeScaleDB] Error processing message: {ex.Message}");
+                        }
+                      
                     };
                 }
             }
@@ -623,7 +751,7 @@ namespace IOT
 
         private delegate void SafeCallDelegate_appendLog(String strContent, bool newline = true, bool Inc_time = true);
 
-        private void appendLog(String strContent, bool newline = true, bool Inc_time = true) //Thread Safe
+        private void appendLog(String strContent, bool newline = true, bool Inc_time = true)    // Thread Safe
         {
             DateTime localDate = DateTime.Now;
 
@@ -808,17 +936,13 @@ namespace IOT
                 Properties.Settings.Default.Save();
             }
         }
-
-        private void txtLog_TextChanged(object sender, EventArgs e)
-        {
-
-        }
+        
     }
 
     
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    public class RtdbConfiguration
+    public class IotConfiguration
     {
         public string MqttUrl { get; set; }
         public int? MqttPort { get; set; }
@@ -854,6 +978,7 @@ namespace IOT
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class Redis
     {
+        public bool clustered { get; set; }
         public string connectionString { get; set; }
         public int database { get; set; }
     }
@@ -878,6 +1003,7 @@ namespace IOT
         public string ConnectionString { get; set; }
         public string table { get; set; }
     }
+    
 
   
 }

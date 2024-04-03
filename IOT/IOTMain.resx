@@ -277,43 +277,4 @@
         cODsx/0/epjegYYeIyUAAAAASUVORK5CYII=
 </value>
   </data>
-  <data name="AppAlreadyRunning" xml:space="preserve">
-    <value>App Already Running!</value>
-  </data>
-  <data name="NILEAgentIoT" xml:space="preserve">
-    <value>NILE Agent IoT</value>
-  </data>
-  <data name="UnknownConnectionStatus" xml:space="preserve">
-    <value>Unknown connection status.</value>
-  </data>
-  <data name="PasswordPrompt" xml:space="preserve">
-    <value>Password</value>
-  </data>
-  <data name="ApplyText" xml:space="preserve">
-    <value>적용</value>
-  </data>
-  <data name="SelectConfigFile" xml:space="preserve">
-    <value>Please select a configuration file.</value>
-  </data>
-  <data name="ErrorText" xml:space="preserve">
-    <value>Error</value>
-  </data>
-  <data name="IncorrectPasswordText" xml:space="preserve">
-    <value>Incorrect password.</value>
-  </data>
-  <data name="SubscribeText" xml:space="preserve">
-    <value>Subscribe</value>
-  </data>
-  <data name="InvalidConfigFileOrEmpty" xml:space="preserve">
-    <value>Configuration file is empty or invalid.</value>
-  </data>
-  <data name="MqttConnectedSuccessfully" xml:space="preserve">
-    <value>MQTT Connected Successfully.</value>
-  </data>
-  <data name="UnsubscribeText" xml:space="preserve">
-    <value>Unsubscribe</value>
-  </data>
-  <data name="FileFilterConfig" xml:space="preserve">
-    <value>JSON files (*.json)|*.json|All files (*.*)|*.*</value>
-  </data>
 </root>

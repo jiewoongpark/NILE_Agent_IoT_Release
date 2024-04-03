@@ -44,6 +44,8 @@
             this.lbConnectionIndicator = new System.Windows.Forms.Label();
             this.lbCoapTimer = new System.Windows.Forms.Label();
             this.CoapTimer = new System.Windows.Forms.NumericUpDown();
+            this.ShowLog = new System.Windows.Forms.CheckBox();
+            this.MessageTime = new System.Windows.Forms.CheckBox();
             folderBrowserDialog = new System.Windows.Forms.FolderBrowserDialog();
             this.LogGroupBox.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.CoapTimer)).BeginInit();
@@ -74,7 +76,6 @@
             this.txtLog.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.txtLog.Size = new System.Drawing.Size(690, 330);
             this.txtLog.TabIndex = 4;
-            this.txtLog.TextChanged += new System.EventHandler(this.txtLog_TextChanged);
             // 
             // lbCurrentTime
             // 
@@ -191,7 +192,7 @@
             // lbCoapTimer
             // 
             this.lbCoapTimer.AutoSize = true;
-            this.lbCoapTimer.Location = new System.Drawing.Point(342, 432);
+            this.lbCoapTimer.Location = new System.Drawing.Point(370, 432);
             this.lbCoapTimer.Name = "lbCoapTimer";
             this.lbCoapTimer.Size = new System.Drawing.Size(103, 17);
             this.lbCoapTimer.TabIndex = 62;
@@ -199,13 +200,37 @@
             // 
             // CoapTimer
             // 
-            this.CoapTimer.Location = new System.Drawing.Point(451, 427);
+            this.CoapTimer.Location = new System.Drawing.Point(479, 427);
             this.CoapTimer.Maximum = new decimal(new int[] { 3000, 0, 0, 0 });
             this.CoapTimer.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             this.CoapTimer.Name = "CoapTimer";
             this.CoapTimer.Size = new System.Drawing.Size(76, 25);
             this.CoapTimer.TabIndex = 61;
             this.CoapTimer.Value = new decimal(new int[] { 1, 0, 0, 0 });
+            // 
+            // ShowLog
+            // 
+            this.ShowLog.AutoSize = true;
+            this.ShowLog.Checked = true;
+            this.ShowLog.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.ShowLog.Location = new System.Drawing.Point(150, 431);
+            this.ShowLog.Name = "ShowLog";
+            this.ShowLog.Size = new System.Drawing.Size(84, 21);
+            this.ShowLog.TabIndex = 44;
+            this.ShowLog.Text = "로그 표출";
+            this.ShowLog.UseVisualStyleBackColor = true;
+            // 
+            // MessageTime
+            // 
+            this.MessageTime.AutoSize = true;
+            this.MessageTime.Checked = true;
+            this.MessageTime.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.MessageTime.Location = new System.Drawing.Point(240, 431);
+            this.MessageTime.Name = "MessageTime";
+            this.MessageTime.Size = new System.Drawing.Size(115, 21);
+            this.MessageTime.TabIndex = 63;
+            this.MessageTime.Text = "메시지 내 시간";
+            this.MessageTime.UseVisualStyleBackColor = true;
             // 
             // frmIOTMain
             // 
@@ -214,6 +239,8 @@
             this.BackColor = System.Drawing.SystemColors.ButtonFace;
             this.ClientSize = new System.Drawing.Size(714, 461);
             this.ControlBox = false;
+            this.Controls.Add(this.MessageTime);
+            this.Controls.Add(this.ShowLog);
             this.Controls.Add(this.lbCoapTimer);
             this.Controls.Add(this.CoapTimer);
             this.Controls.Add(this.lbConnectionIndicator);
@@ -234,6 +261,10 @@
             this.ResumeLayout(false);
             this.PerformLayout();
         }
+
+        private System.Windows.Forms.CheckBox MessageTime;
+
+        private System.Windows.Forms.CheckBox ShowLog;
 
         private System.Windows.Forms.Label lbCoapTimer;
         private System.Windows.Forms.NumericUpDown CoapTimer;

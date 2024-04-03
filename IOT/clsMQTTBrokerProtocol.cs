@@ -1,8 +1,8 @@
 ﻿using MQTTnet;
 using MQTTnet.Client;
-using MQTTnet.Client.Options;
 using System;
 using System.Threading.Tasks;
+using MQTTnet.Client.Options;
 
 namespace IOT
 {
@@ -52,7 +52,6 @@ namespace IOT
             await _client.DisconnectAsync();
         }
 
-        // Method to check if the MQTT client is connected
         public bool IsConnected()
         {
             return _client?.IsConnected ?? false;

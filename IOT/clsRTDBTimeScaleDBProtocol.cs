@@ -1,12 +1,13 @@
 ﻿using Npgsql;
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 
 namespace IOT
 {
     public class ClsRtdbTimeScaleDbProtocol
     {
-        private static string _connectionString;
+        private readonly string _connectionString;
 
         public ClsRtdbTimeScaleDbProtocol(string connectionString)
         {
@@ -14,27 +15,44 @@ namespace IOT
         }
 
 
-        public async Task WriteDataAsync(string tableName, string topic, string message)
+        public async Task WriteDataAsync(string tableName, string topic, string message, bool MessageTime)
         {
             var query = $"INSERT INTO {tableName} (topic, message, timestamp) VALUES (@topic, @message, @timestamp)";
         
+            string messageValue;
+            
+            if (MessageTime)
+            {
+                var utcNow = DateTime.UtcNow;
+                var koreanTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time");
+                var koreanTime = TimeZoneInfo.ConvertTimeFromUtc(utcNow, koreanTimeZone);
+                var timestamp = koreanTime.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+
+                messageValue = $"[{timestamp}] {message}";
+            }
+            else
+            {
+                messageValue = message;
+            }
+            
             using (var conn = new NpgsqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
                 using (var cmd = new NpgsqlCommand(query, conn))
                 {
                     cmd.Parameters.AddWithValue("@topic", topic);
-                    cmd.Parameters.AddWithValue("@message", message);
+                    cmd.Parameters.AddWithValue("@message", messageValue);
                     cmd.Parameters.AddWithValue("@timestamp", DateTime.UtcNow);
                     await cmd.ExecuteNonQueryAsync();
                 }
             }
         }
         
+        
         /*public async Task WriteDataBatchAsync(IEnumerable<(string topic, string message)> data, string tableName)
         {
             var query = $"INSERT INTO {tableName} (topic, message, timestamp) VALUES (@topic, @message, @timestamp)";
-            
+
             using (var conn = new NpgsqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
@@ -57,6 +75,8 @@ namespace IOT
                 }
             }
         }*/
+        
+        
     }
     
 }
