@@ -467,11 +467,12 @@ namespace IOT
                         try
                         {
                             // for Testing Purpose
-                            // appendLog("List Length: " + redisProtocol.connectedAt.ToString());
-                            
+                            //appendLog("List Length: " + redisProtocol.listLengthView);
+                            //appendLog("Connected at: " + redisProtocol.connectedAt);
+
                             if (redisProtocol.connectionStatus)
                             {
-                                await redisProtocol.AppendDataToListAsync(topic, message, MessageTime.Checked);
+                                await redisProtocol.AppendDataToListAsync(topic, message, MessageTime.Checked, redisConfig.clustered, redisConfig.connectionString);
                                 
                                 if (ShowLog.Checked)
                                 { 
@@ -522,7 +523,7 @@ namespace IOT
                             {
                                 if (redisProtocol.connectionStatus)
                                 {
-                                    await redisProtocol.AppendDataToListAsync(topic, message, MessageTime.Checked);
+                                    await redisProtocol.AppendDataToListAsync(topic, message, MessageTime.Checked, redisConfig.clustered, redisConfig.connectionString);
                                     appendLog($"[CoAP] messages sent to [Redis]");
                                 }
                                 else
